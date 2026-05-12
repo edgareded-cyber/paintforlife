@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Paintforlife" />
+  <meta name="theme-color" content="#007aff" />
+  <meta name="description" content="Gestión profesional de trabajos de pintura" />
+  <title>Paintforlife</title>
+  <link rel="manifest" href="/manifest.json" />
+
+  <!-- Apple touch icons (will use emoji fallback) -->
+  <link rel="apple-touch-icon" href="/icon-192.png" />
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; background: #f2f2f7; }
+    #root { height: 100%; }
+    /* Safe area support for iPhone notch/home bar */
+    .screen { padding-bottom: env(safe-area-inset-bottom, 20px); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- React + Babel from CDN (no build tools needed) -->
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    // ─── Constants ──────────────────────────────────────────────────────────
+    const PAINT_BRANDS = ["Comex","Sherwin-Williams","Pinturas Berel","Sayer","Valspar","Behr","Benjamin Moore","Valentina","Otra"];
+    const WORK_TYPES   = ["Pintura interior","Pintura exterior","Pintura de techo","Pintura de fachada","Pintura decorativa","Sellado / impermeabilización","Pintura de herrería","Pintura de madera","Lija y preparación","Otro"];
+    const STORAGE_KEY  = "paintforlife_v3";
+    const QUOTES_KEY   = "paintforlife_quotes_v1";
+    const MONTHS_ES    = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+    function loadData(key) { try { return JSON.parse(localStorage.getItem(key)||"[]"); } catch { return []; } }
+    function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+    function genId(prefix="PFL") { return `${prefix}-${Date.now().toString(36).toUpperCase()}`; }
+    function fmtDate(d) { if(!d) return "—"; const [y,m,day]=d.split("-"); return `${day}/${m}/${y}`; }
+    function fmtShort(d) { if(!d) return "—"; const [y,m,day]=d.split("-"); return `${day} ${MONTHS_ES[+m-1]} ${y}`; }
+    function today() { return new Date().toISOString().slice(0,10); }
+    const blankTask  = ()=>({ uid:Math.random().toString(36).slice(2), workType:"", workTypeOther:"", paintBrand:"", paintBrandOther:"", paintColor:"", paintCode:"", quantityType:"litros", liters:"", buckets:"", gallons:"", notes:"" });
+    const blankJob   = ()=>({ id:genId(), client:"", address:"", city:"", date:today(), tasks:[blankTask()], createdAt:new Date().toISOString() });
+    const blankQuote = ()=>({ id:genId("COT"), client:"", clientPhone:"", clientEmail:"", address:"", date:today(), validDays:"15", items:[{uid:Math.random().toString(36).slice(2), description:"", area:"", unit:"m²", price:""}], laborCost:"", materialCost:"", discount:"", notes:"", tax:"16", status:"borrador", createdAt:new Date().toISOString() });
+
+    // ─── Root ────────────────────────────────────────────────────────────────
+    function App() {
+      const [jobs,      setJobs]      = useState(()=>loadData(STORAGE_KEY));
+      const [quotes,    setQuotes]    = useState(()=>loadData(QUOTES_KEY));
+      const [screen,    setScreen]    = useState("home");
+      const [editJob,   setEditJob]   = useState(null);
+      const [viewJob,   setViewJob]   = useState(null);
+      const [editQuote, setEditQuote] = useState(null);
+      const [viewQuote, setViewQuote] = useState(null);
+      const [toast,     setToast]     = useState(null);
+      const [dash,      setDash]      = useState(null);
+
+      useEffect(()=>{ saveData(STORAGE_KEY, jobs);  },[jobs]);
+      useEffect(()=>{ saveData(QUOTES_KEY,  quotes); },[quotes]);
+
+      function showToast(msg,ok=true){ setToast({msg,ok}); setTimeout(()=>setToast(null),2600); }
+
+      function saveJob(job){
+        setJobs(p=>{ const e=p.find(j=>j.id===job.id); return e?p.map(j=>j.id===job.id?job:j):[job,...p]; });
+        showToast("Proyecto guardado ✓"); setScreen("jobs");
+      }
+      function deleteJob(id){ setJobs(p=>p.filter(j=>j.id!==id)); showToast("Eliminado",false); setScreen("jobs"); }
+      function saveQuote(q){
+        setQuotes(p=>{ const e=p.find(x=>x.id===q.id); return e?p.map(x=>x.id===q.id?q:x):[q,...p]; });
+        showToast("Cotización guardada ✓"); setScreen("quotes");
+      }
+      function deleteQuote(id){ setQuotes(p=>p.filter(q=>q.id!==id)); showToast("Eliminada",false); setScreen("quotes"); }
+
+      return (
+        <div style={S.root}>
+          <style>{CSS}</style>
+          {toast && <div className={`toast ${toast.ok?"tok":"terr"}`}>{toast.ok?"✓":"✗"} {toast.msg}</div>}
+          {screen==="home"        && <HomeScreen onNav={s=>setScreen(s)} jobs={jobs} quotes={quotes} />}
+          {screen==="dashboard"   && <DashboardScreen jobs={jobs} dash={dash} setDash={setDash} onBack={()=>setScreen("home")} onOpenJob={j=>{setViewJob(j);setScreen("jobDetail");}} />}
+          {screen==="jobs"        && <JobsScreen jobs={jobs} onBack={()=>setScreen("home")} onNew={()=>{setEditJob(blankJob());setScreen("jobForm");}} onOpen={j=>{setViewJob(j);setScreen("jobDetail");}} />}
+          {screen==="jobForm"     && editJob && <JobForm job={editJob} onSave={saveJob} onCancel={()=>setScreen("jobs")} />}
+          {screen==="jobDetail"   && viewJob && <JobDetail job={jobs.find(j=>j.id===viewJob.id)||viewJob} onBack={()=>setScreen("jobs")} onEdit={()=>{setEditJob(jobs.find(j=>j.id===viewJob.id)||viewJob);setScreen("jobForm");}} onDelete={()=>deleteJob(viewJob.id)} />}
+          {screen==="quotes"      && <QuotesScreen quotes={quotes} onBack={()=>setScreen("home")} onNew={()=>{setEditQuote(blankQuote());setScreen("quoteForm");}} onOpen={q=>{setViewQuote(q);setScreen("quoteDetail");}} />}
+          {screen==="quoteForm"   && editQuote && <QuoteForm quote={editQuote} onSave={saveQuote} onCancel={()=>setScreen("quotes")} />}
+          {screen==="quoteDetail" && viewQuote && <QuoteDetail quote={quotes.find(q=>q.id===viewQuote.id)||viewQuote} onBack={()=>setScreen("quotes")} onEdit={()=>{setEditQuote(quotes.find(q=>q.id===viewQuote.id)||viewQuote);setScreen("quoteForm");}} onDelete={()=>deleteQuote(viewQuote.id)} />}
+        </div>
+      );
+    }
+
+    // ─── Home ─────────────────────────────────────────────────────────────────
+    function HomeScreen({ onNav, jobs, quotes }) {
+      const pending = quotes.filter(q=>q.status==="borrador"||q.status==="enviada").length;
+      return (
+        <div style={S.screen}>
+          <div style={S.heroHeader}>
+            <div style={S.heroLogo}>🎨</div>
+            <div style={S.heroTitle}>Paintforlife</div>
+            <div style={S.heroSub}>Gestión de trabajos</div>
+          </div>
+          <div style={S.homeCards}>
+            <HomeCard icon="📊" title="Gestión de trabajos"   desc="Dashboard con estadísticas y resumen de proyectos"       color="#007aff" badge={jobs.length}  onClick={()=>onNav("dashboard")} />
+            <HomeCard icon="🖌️" title="Trabajos realizados"   desc="Historial completo de todos los proyectos registrados"   color="#34c759" badge={jobs.length}  onClick={()=>onNav("jobs")} />
+            <HomeCard icon="📋" title="Presupuestos"          desc="Crea y envía cotizaciones formales a tus clientes"       color="#ff9500" badge={pending||null} onClick={()=>onNav("quotes")} />
+          </div>
+          <div style={S.homeFooter}>Paintforlife · Gestión profesional de pintura</div>
+        </div>
+      );
+    }
+    function HomeCard({ icon, title, desc, color, badge, onClick }) {
+      return (
+        <div style={{...S.homeCard, borderLeft:`4px solid ${color}`}} onClick={onClick} className="hcard">
+          <div style={S.homeCardLeft}>
+            <div style={{...S.homeCardIcon, background:`${color}18`}}>{icon}</div>
+            <div style={S.homeCardText}>
+              <div style={S.homeCardTitle}>{title}</div>
+              <div style={S.homeCardDesc}>{desc}</div>
+            </div>
+          </div>
+          <div style={S.homeCardRight}>
+            {badge ? <div style={{...S.homeBadge,background:color}}>{badge}</div> : null}
+            <div style={{...S.chevron,color}}>›</div>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Dashboard ────────────────────────────────────────────────────────────
+    function DashboardScreen({ jobs, dash, setDash, onBack, onOpenJob }) {
+      const thisMonth = new Date().toISOString().slice(0,7);
+      const monthJobs = jobs.filter(j=>j.date?.startsWith(thisMonth));
+      const clients   = [...new Set(jobs.map(j=>j.client))];
+      const panels    = { projects:{title:"Todos los proyectos",items:jobs}, month:{title:"Trabajos este mes",items:monthJobs} };
+      return (
+        <div style={S.screen}>
+          <NavBar title="Dashboard" onBack={onBack} />
+          <div style={S.formScroll}>
+            <div style={S.dashGrid}>
+              <DashCard icon="📋" val={jobs.length}     label="Proyectos" active={dash==="projects"} color="#007aff" onClick={()=>setDash(dash==="projects"?null:"projects")} />
+              <DashCard icon="📅" val={monthJobs.length} label="Este mes"  active={dash==="month"}    color="#ff9500" onClick={()=>setDash(dash==="month"?null:"month")} />
+              <DashCard icon="👥" val={clients.length}   label="Clientes"  active={dash==="clients"}  color="#34c759" onClick={()=>setDash(dash==="clients"?null:"clients")} />
+            </div>
+            {dash && (
+              <div style={{margin:"0 16px"}}>
+                {dash==="clients" ? (
+                  clients.length===0 ? <EmptyState icon="👥" msg="Sin clientes aún" /> :
+                  clients.map(client => {
+                    const cJobs = jobs.filter(j=>j.client===client);
+                    return (
+                      <div key={client} style={{...S.card,marginBottom:10}}>
+                        <div style={{padding:"12px 16px"}}>
+                          <div style={{fontSize:16,fontWeight:700,color:"#000"}}>{client}</div>
+                          <div style={{fontSize:13,color:"#8e8e93"}}>{cJobs.length} proyecto{cJobs.length!==1?"s":""}</div>
+                        </div>
+                        {cJobs.map((j,i)=>(
+                          <div key={j.id}>
+                            {i>0&&<Divider/>}
+                            <div style={{padding:"10px 16px",cursor:"pointer"}} onClick={()=>onOpenJob(j)} className="cell">
+                              <div style={{fontSize:14,color:"#007aff"}}>{j.address}{j.city?`, ${j.city}`:""}</div>
+                              <div style={{fontSize:12,color:"#8e8e93"}}>{fmtShort(j.date)}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <>
+                    <div style={S.dashPanelTitle}>{panels[dash]?.title}</div>
+                    {(panels[dash]?.items||[]).length===0 ? <EmptyState icon="📋" msg="Sin datos" /> :
+                      <div style={S.card}>
+                        {(panels[dash]?.items||[]).map((job,i,arr)=><JobRow key={job.id} job={job} onOpen={()=>onOpenJob(job)} last={i===arr.length-1} />)}
+                      </div>
+                    }
+                  </>
+                )}
+              </div>
+            )}
+            <div style={{height:40}}/>
+          </div>
+        </div>
+      );
+    }
+    function DashCard({ icon, val, label, active, color, onClick }) {
+      return (
+        <div style={{...S.dashCard,background:active?color:"#fff",border:`2px solid ${active?color:"transparent"}`}} onClick={onClick} className="hcard">
+          <div style={{fontSize:26}}>{icon}</div>
+          <div style={{fontSize:28,fontWeight:700,color:active?"#fff":"#000",marginTop:4}}>{val}</div>
+          <div style={{fontSize:12,color:active?"rgba(255,255,255,.8)":"#8e8e93",marginTop:2}}>{label}</div>
+        </div>
+      );
+    }
+
+    // ─── Jobs List ────────────────────────────────────────────────────────────
+    function JobsScreen({ jobs, onBack, onNew, onOpen }) {
+      const [search, setSearch] = useState("");
+      const filtered = jobs.filter(j=>{ const q=search.toLowerCase(); return !q||j.client?.toLowerCase().includes(q)||j.address?.toLowerCase().includes(q)||j.city?.toLowerCase().includes(q)||j.tasks?.some(t=>t.paintCode?.toLowerCase().includes(q)||t.paintColor?.toLowerCase().includes(q)); });
+      return (
+        <div style={S.screen}>
+          <NavBar title="Trabajos realizados" onBack={onBack} />
+          <div style={S.formScroll}>
+            <div style={S.searchWrap}>
+              <span style={S.searchIcon}>🔍</span>
+              <input style={S.searchInput} placeholder="Buscar cliente, color, código..." value={search} onChange={e=>setSearch(e.target.value)} />
+              {search && <button style={S.searchClear} onClick={()=>setSearch("")}>✕</button>}
+            </div>
+            <div style={{margin:"0 16px"}}>
+              {filtered.length===0 ? <EmptyState icon="🖌️" msg="Sin proyectos" sub='Toca "+" para agregar' /> :
+                <div style={S.card}>{filtered.map((j,i)=><JobRow key={j.id} job={j} onOpen={()=>onOpen(j)} last={i===filtered.length-1} />)}</div>
+              }
+            </div>
+            <div style={{height:40}}/>
+          </div>
+          <button style={S.fab} onClick={onNew} className="fab">+</button>
+        </div>
+      );
+    }
+    function JobRow({ job, onOpen, last }) {
+      const t = job.tasks?.[0]; const n = job.tasks?.length||0;
+      return (
+        <div style={{...S.jobRow,borderBottom:last?"none":"0.5px solid rgba(0,0,0,0.1)"}} onClick={onOpen} className="cell">
+          <div style={S.jobRowLeft}>
+            <div style={S.jobRowClient}>{job.client||"Sin nombre"}</div>
+            <div style={S.jobRowAddr}>📍 {job.address}{job.city?`, ${job.city}`:""}</div>
+            {t?.workType&&<div style={S.jobRowTags}><span style={S.tag}>{t.workType==="Otro"?t.workTypeOther||"Otro":t.workType}</span>{n>1&&<span style={S.tagMore}>+{n-1} más</span>}</div>}
+          </div>
+          <div style={S.jobRowRight}><div style={S.jobRowDate}>{fmtShort(job.date)}</div><div style={S.chevron}>›</div></div>
+        </div>
+      );
+    }
+
+    // ─── Job Form ─────────────────────────────────────────────────────────────
+    function JobForm({ job: init, onSave, onCancel }) {
+      const [job, setJob] = useState(init);
+      const [errors, setErrors] = useState({});
+      function setField(k,v){ setJob(j=>({...j,[k]:v})); }
+      function setTask(uid,k,v){ setJob(j=>({...j,tasks:j.tasks.map(t=>t.uid===uid?{...t,[k]:v}:t)})); }
+      function validate(){ const e={}; if(!job.client.trim())e.client=true; if(!job.address.trim())e.address=true; setErrors(e); return !Object.keys(e).length; }
+      return (
+        <div style={S.screen}>
+          <NavBarForm title="Nuevo proyecto" onCancel={onCancel} onSave={()=>{ if(validate()) onSave(job); }} />
+          <div style={S.formScroll}>
+            <SectionHeader label="INFORMACIÓN DEL PROYECTO" />
+            <div style={S.card}>
+              <FormRow label="Cliente" error={errors.client}><input style={S.textInput} placeholder="Nombre del cliente" value={job.client} onChange={e=>setField("client",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Fecha"><input style={S.textInput} type="date" value={job.date} onChange={e=>setField("date",e.target.value)}/></FormRow>
+            </div>
+            <SectionHeader label="UBICACIÓN" />
+            <div style={S.card}>
+              <FormRow label="Dirección" error={errors.address}><input style={S.textInput} placeholder="Calle, núm., colonia" value={job.address} onChange={e=>setField("address",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Ciudad"><input style={S.textInput} placeholder="Ciudad / municipio" value={job.city} onChange={e=>setField("city",e.target.value)}/></FormRow>
+            </div>
+            {job.tasks.map((task,idx)=>(
+              <TaskForm key={task.uid} task={task} index={idx} total={job.tasks.length}
+                onChange={(k,v)=>setTask(task.uid,k,v)}
+                onRemove={()=>setJob(j=>({...j,tasks:j.tasks.filter(t=>t.uid!==task.uid)}))} />
+            ))}
+            <button style={S.addTaskBtn} onClick={()=>setJob(j=>({...j,tasks:[...j.tasks,blankTask()]}))} className="addtask">
+              <span style={{fontSize:18,marginRight:8}}>+</span>Agregar otro trabajo / descripción
+            </button>
+            <div style={{height:40}}/>
+          </div>
+        </div>
+      );
+    }
+    function TaskForm({ task, index, total, onChange, onRemove }) {
+      return (
+        <div>
+          <div style={S.taskHeader}>
+            <span style={S.taskLabel}>TRABAJO #{index+1}</span>
+            {total>1&&<button style={S.taskRemove} onClick={onRemove}>Eliminar</button>}
+          </div>
+          <div style={S.card}>
+            <FormRow label="Tipo"><select style={S.selectInput} value={task.workType} onChange={e=>onChange("workType",e.target.value)}><option value="">Seleccionar...</option>{WORK_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></FormRow>
+            {task.workType==="Otro"&&<><Divider/><FormRow label="Especifica"><input style={S.textInput} placeholder="Describe el trabajo..." value={task.workTypeOther} onChange={e=>onChange("workTypeOther",e.target.value)}/></FormRow></>}
+            <Divider/>
+            <FormRow label="Marca"><select style={S.selectInput} value={task.paintBrand} onChange={e=>onChange("paintBrand",e.target.value)}><option value="">Seleccionar...</option>{PAINT_BRANDS.map(b=><option key={b} value={b}>{b}</option>)}</select></FormRow>
+            {task.paintBrand==="Otra"&&<><Divider/><FormRow label="Especifica"><input style={S.textInput} placeholder="Nombre de la marca..." value={task.paintBrandOther} onChange={e=>onChange("paintBrandOther",e.target.value)}/></FormRow></>}
+            <Divider/>
+            <FormRow label="Color"><input style={S.textInput} placeholder="Ej: Blanco Hueso" value={task.paintColor} onChange={e=>onChange("paintColor",e.target.value)}/></FormRow>
+            <Divider/>
+            <FormRow label="Clave / código"><input style={S.textInput} placeholder="Ej: SW 7012" value={task.paintCode} onChange={e=>onChange("paintCode",e.target.value)}/></FormRow>
+            <Divider/>
+            <FormRow label="Cantidad">
+              <div style={{display:"flex",flexDirection:"column",gap:8,flex:1}}>
+                <div style={S.segmentRow}>
+                  {["litros","cubetas","galones","combinado"].map(opt=>(
+                    <button key={opt} style={{...S.segment,...(task.quantityType===opt?S.segmentActive:{})}} onClick={()=>onChange("quantityType",opt)}>
+                      {opt.charAt(0).toUpperCase()+opt.slice(1)}
+                    </button>
+                  ))}
+                </div>
+                <QuantityInputs task={task} onChange={onChange}/>
+              </div>
+            </FormRow>
+            <Divider/>
+            <FormRow label="Notas" align="top"><textarea style={S.textArea} placeholder="Observaciones..." value={task.notes} onChange={e=>onChange("notes",e.target.value)} rows={3}/></FormRow>
+          </div>
+        </div>
+      );
+    }
+    function QuantityInputs({ task, onChange }) {
+      const inp=(label,key,ph)=>(
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:12,color:"#8e8e93",width:60,flexShrink:0}}>{label}</span>
+          <input style={{...S.textInput,flex:1}} type="number" min="0" step="0.1" placeholder={ph} value={task[key]} onChange={e=>onChange(key,e.target.value)}/>
+        </div>
+      );
+      if(task.quantityType==="litros")  return inp("Litros","liters","Ej: 4.5");
+      if(task.quantityType==="cubetas") return inp("Cubetas","buckets","Ej: 2");
+      if(task.quantityType==="galones") return inp("Galones","gallons","Ej: 1");
+      return <div style={{display:"flex",flexDirection:"column",gap:8}}>{inp("Litros","liters","0")}{inp("Cubetas","buckets","0")}{inp("Galones","gallons","0")}</div>;
+    }
+
+    // ─── Job Detail ───────────────────────────────────────────────────────────
+    function JobDetail({ job, onBack, onEdit, onDelete }) {
+      const [del, setDel] = useState(false);
+      function fmtQty(t){ const p=[]; if(t.liters)p.push(`${t.liters} L`); if(t.buckets)p.push(`${t.buckets} cubeta${t.buckets!=="1"?"s":""}`); if(t.gallons)p.push(`${t.gallons} galón${t.gallons!=="1"?"es":""}`); return p.join(" + ")||"—"; }
+      return (
+        <div style={S.screen}>
+          <NavBarForm title="Detalle" onCancel={onBack} cancelLabel="‹ Atrás" onSave={onEdit} saveLabel="Editar" />
+          <div style={S.formScroll}>
+            <div style={{...S.detailHero,background:"linear-gradient(135deg,#007aff,#34aadc)"}}>
+              <div style={S.detailId}>{job.id}</div>
+              <div style={S.detailClient}>{job.client}</div>
+              <div style={S.detailAddr}>📍 {job.address}{job.city?`, ${job.city}`:""}</div>
+              <div style={S.detailDate}>📅 {fmtDate(job.date)}</div>
+            </div>
+            {job.tasks?.map((task,idx)=>(
+              <div key={task.uid}>
+                <SectionHeader label={`TRABAJO #${idx+1}`}/>
+                <div style={S.card}>
+                  <DetailRow icon="🔨" label="Tipo"     value={task.workType==="Otro"?task.workTypeOther:task.workType}/>
+                  {task.paintBrand&&<><Divider/><DetailRow icon="🏷" label="Marca"   value={task.paintBrand==="Otra"?task.paintBrandOther:task.paintBrand}/></>}
+                  {task.paintColor&&<><Divider/><DetailRow icon="🎨" label="Color"   value={task.paintColor}/></>}
+                  {task.paintCode &&<><Divider/><DetailRow icon="🔑" label="Clave"   value={<span style={S.codeVal}>{task.paintCode}</span>}/></>}
+                  {(task.liters||task.buckets||task.gallons)&&<><Divider/><DetailRow icon="💧" label="Cantidad" value={fmtQty(task)}/></>}
+                  {task.notes     &&<><Divider/><DetailRow icon="📝" label="Notas"   value={task.notes} align="top"/></>}
+                </div>
+              </div>
+            ))}
+            <div style={{padding:"16px 16px 0"}}>
+              {!del ? <button style={S.deleteBtn} onClick={()=>setDel(true)}>Eliminar proyecto</button>
+                    : <div style={S.confirmBox}>
+                        <div style={{fontSize:15,color:"#000"}}>¿Eliminar este proyecto? No se puede deshacer.</div>
+                        <div style={{display:"flex",gap:10,marginTop:12}}>
+                          <button style={S.btnCancel} onClick={()=>setDel(false)}>Cancelar</button>
+                          <button style={S.btnConfirmDel} onClick={onDelete}>Eliminar</button>
+                        </div>
+                      </div>
+              }
+            </div>
+            <div style={{height:40}}/>
+          </div>
+        </div>
+      );
+    }
+
+    // ─── Quotes List ──────────────────────────────────────────────────────────
+    const statusColor = { borrador:"#8e8e93", enviada:"#ff9500", aceptada:"#34c759", rechazada:"#ff3b30" };
+    const statusLabel = { borrador:"Borrador", enviada:"Enviada", aceptada:"Aceptada", rechazada:"Rechazada" };
+    function calcTotal(q){ const items=(q.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseFloat(i.area)||1),0); const sub=items+(parseFloat(q.laborCost)||0)+(parseFloat(q.materialCost)||0)-(parseFloat(q.discount)||0); return sub+sub*(parseFloat(q.tax)||0)/100; }
+
+    function QuotesScreen({ quotes, onBack, onNew, onOpen }) {
+      return (
+        <div style={S.screen}>
+          <NavBar title="Presupuestos" onBack={onBack} />
+          <div style={S.formScroll}>
+            <div style={{margin:"12px 16px"}}>
+              {quotes.length===0 ? <EmptyState icon="📋" msg="Sin cotizaciones" sub='Toca "+" para crear una'/> :
+                <div style={S.card}>
+                  {quotes.map((q,i)=>(
+                    <div key={q.id} style={{...S.jobRow,borderBottom:i===quotes.length-1?"none":"0.5px solid rgba(0,0,0,0.1)"}} onClick={()=>onOpen(q)} className="cell">
+                      <div style={S.jobRowLeft}>
+                        <div style={S.jobRowClient}>{q.client||"Sin cliente"}</div>
+                        <div style={S.jobRowAddr}>📍 {q.address||"—"}</div>
+                        <div style={S.jobRowTags}>
+                          <span style={{...S.tag,background:`${statusColor[q.status]}22`,color:statusColor[q.status]}}>{statusLabel[q.status]}</span>
+                          <span style={S.tagMore}>Total: ${calcTotal(q).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+                        </div>
+                      </div>
+                      <div style={S.jobRowRight}><div style={S.jobRowDate}>{fmtShort(q.date)}</div><div style={{...S.chevron,color:"#ff9500"}}>›</div></div>
+                    </div>
+                  ))}
+                </div>
+              }
+            </div>
+            <div style={{height:40}}/>
+          </div>
+          <button style={{...S.fab,background:"#ff9500"}} onClick={onNew} className="fab">+</button>
+        </div>
+      );
+    }
+
+    // ─── Quote Form ───────────────────────────────────────────────────────────
+    function QuoteForm({ quote: init, onSave, onCancel }) {
+      const [q, setQ] = useState(init);
+      function setF(k,v){ setQ(x=>({...x,[k]:v})); }
+      function setItem(uid,k,v){ setQ(x=>({...x,items:x.items.map(i=>i.uid===uid?{...i,[k]:v}:i)})); }
+      const items=q.items.reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseFloat(i.area)||1),0);
+      const labor=parseFloat(q.laborCost)||0, mat=parseFloat(q.materialCost)||0, disc=parseFloat(q.discount)||0;
+      const sub=items+labor+mat-disc, taxAmt=sub*(parseFloat(q.tax)||0)/100, total=sub+taxAmt;
+      return (
+        <div style={S.screen}>
+          <NavBarForm title="Nueva cotización" onCancel={onCancel} onSave={()=>onSave(q)} />
+          <div style={S.formScroll}>
+            <SectionHeader label="DATOS DEL CLIENTE"/>
+            <div style={S.card}>
+              <FormRow label="Cliente"><input style={S.textInput} placeholder="Nombre completo" value={q.client} onChange={e=>setF("client",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Teléfono"><input style={S.textInput} placeholder="Ej: 443 123 4567" type="tel" value={q.clientPhone} onChange={e=>setF("clientPhone",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Correo"><input style={S.textInput} placeholder="correo@ejemplo.com" type="email" value={q.clientEmail} onChange={e=>setF("clientEmail",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Dirección"><input style={S.textInput} placeholder="Dirección del trabajo" value={q.address} onChange={e=>setF("address",e.target.value)}/></FormRow>
+            </div>
+            <SectionHeader label="DETALLES DE COTIZACIÓN"/>
+            <div style={S.card}>
+              <FormRow label="Fecha"><input style={S.textInput} type="date" value={q.date} onChange={e=>setF("date",e.target.value)}/></FormRow>
+              <Divider/>
+              <FormRow label="Válida por"><div style={{display:"flex",alignItems:"center",gap:6,justifyContent:"flex-end"}}><input style={{...S.textInput,width:60}} type="number" value={q.validDays} onChange={e=>setF("validDays",e.target.value)}/><span style={{fontSize:15,color:"#8e8e93"}}>días</span></div></FormRow>
+              <Divider/>
+              <FormRow label="Estado"><select style={S.selectInput} value={q.status} onChange={e=>setF("status",e.target.value)}><option value="borrador">Borrador</option><option value="enviada">Enviada</option><option value="aceptada">Aceptada</option><option value="rechazada">Rechazada</option></select></FormRow>
+            </div>
+            <SectionHeader label="PARTIDAS / CONCEPTOS"/>
+            {q.items.map((item,idx)=>(
+              <div key={item.uid} style={{...S.card,marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",padding:"10px 16px 6px"}}>
+                  <span style={{fontSize:12,fontWeight:600,color:"#8e8e93"}}>CONCEPTO #{idx+1}</span>
+                  {q.items.length>1&&<button style={S.taskRemove} onClick={()=>setQ(x=>({...x,items:x.items.filter(i=>i.uid!==item.uid)}))}>Eliminar</button>}
+                </div>
+                <Divider/>
+                <FormRow label="Descripción"><input style={S.textInput} placeholder="Ej: Pintura interior sala" value={item.description} onChange={e=>setItem(item.uid,"description",e.target.value)}/></FormRow>
+                <Divider/>
+                <FormRow label="Área / cant.">
+                  <div style={{display:"flex",gap:6,justifyContent:"flex-end"}}>
+                    <input style={{...S.textInput,width:70}} type="number" placeholder="0" value={item.area} onChange={e=>setItem(item.uid,"area",e.target.value)}/>
+                    <select style={{...S.selectInput,width:70}} value={item.unit} onChange={e=>setItem(item.uid,"unit",e.target.value)}>{["m²","ml","pieza","servicio","hr"].map(u=><option key={u} value={u}>{u}</option>)}</select>
+                  </div>
+                </FormRow>
+                <Divider/>
+                <FormRow label="Precio unit."><div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}><span style={{color:"#8e8e93"}}>$</span><input style={{...S.textInput,width:100}} type="number" placeholder="0.00" value={item.price} onChange={e=>setItem(item.uid,"price",e.target.value)}/></div></FormRow>
+                <Divider/>
+                <div style={{padding:"8px 16px",display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontSize:13,color:"#8e8e93"}}>Subtotal</span>
+                  <span style={{fontSize:14,fontWeight:600,color:"#000"}}>${((parseFloat(item.price)||0)*(parseFloat(item.area)||1)).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+                </div>
+              </div>
+            ))}
+            <button style={S.addTaskBtn} onClick={()=>setQ(x=>({...x,items:[...x.items,{uid:Math.random().toString(36).slice(2),description:"",area:"",unit:"m²",price:""}]}))} className="addtask">
+              <span style={{fontSize:18,marginRight:8}}>+</span>Agregar concepto
+            </button>
+            <SectionHeader label="COSTOS Y TOTALES"/>
+            <div style={S.card}>
+              <FormRow label="Mano de obra"><div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}><span style={{color:"#8e8e93"}}>$</span><input style={{...S.textInput,width:120}} type="number" placeholder="0.00" value={q.laborCost} onChange={e=>setF("laborCost",e.target.value)}/></div></FormRow>
+              <Divider/>
+              <FormRow label="Material extra"><div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}><span style={{color:"#8e8e93"}}>$</span><input style={{...S.textInput,width:120}} type="number" placeholder="0.00" value={q.materialCost} onChange={e=>setF("materialCost",e.target.value)}/></div></FormRow>
+              <Divider/>
+              <FormRow label="Descuento"><div style={{display:"flex",alignItems:"center",gap:4,justifyContent:"flex-end"}}><span style={{color:"#8e8e93"}}>$</span><input style={{...S.textInput,width:120}} type="number" placeholder="0.00" value={q.discount} onChange={e=>setF("discount",e.target.value)}/></div></FormRow>
+              <Divider/>
+              <FormRow label="IVA (%)"><select style={S.selectInput} value={q.tax} onChange={e=>setF("tax",e.target.value)}><option value="0">Sin IVA</option><option value="8">8%</option><option value="16">16%</option></select></FormRow>
+            </div>
+            <div style={{...S.card,margin:"8px 16px"}}>
+              <TRow l="Conceptos" v={items}/><Divider/><TRow l="Mano de obra" v={labor}/><Divider/><TRow l="Material" v={mat}/>
+              {disc>0&&<><Divider/><TRow l="Descuento" v={-disc} neg/></>}
+              <Divider/><TRow l={`IVA (${q.tax}%)`} v={taxAmt}/>
+              <div style={{height:1,background:"#007aff",margin:"0 16px"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"14px 16px",background:"#f0f7ff",borderRadius:"0 0 12px 12px"}}>
+                <span style={{fontSize:17,fontWeight:700,color:"#007aff"}}>TOTAL</span>
+                <span style={{fontSize:20,fontWeight:700,color:"#007aff"}}>${total.toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+              </div>
+            </div>
+            <SectionHeader label="NOTAS Y CONDICIONES"/>
+            <div style={S.card}><FormRow label="Notas" align="top"><textarea style={S.textArea} placeholder="Condiciones, garantías, tiempo de entrega..." value={q.notes} onChange={e=>setF("notes",e.target.value)} rows={4}/></FormRow></div>
+            <div style={{height:40}}/>
+          </div>
+        </div>
+      );
+    }
+    function TRow({ l, v, neg }) {
+      return (
+        <div style={{display:"flex",justifyContent:"space-between",padding:"10px 16px"}}>
+          <span style={{fontSize:15,color:"#8e8e93"}}>{l}</span>
+          <span style={{fontSize:15,fontWeight:500,color:neg?"#ff3b30":"#000"}}>{neg?"-":""}${Math.abs(v).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+        </div>
+      );
+    }
+
+    // ─── Quote Detail ─────────────────────────────────────────────────────────
+    function QuoteDetail({ quote: q, onBack, onEdit, onDelete }) {
+      const [del, setDel] = useState(false);
+      const total = calcTotal(q);
+      function handleShare() {
+        const text = buildQuoteText(q, total);
+        if(navigator.share){ navigator.share({title:`Cotización ${q.id}`,text}); }
+        else if(navigator.clipboard){ navigator.clipboard.writeText(text).then(()=>alert("¡Cotización copiada! Pégala en WhatsApp o correo.")); }
+        else { alert(text); }
+      }
+      const items=(q.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseFloat(i.area)||1),0);
+      const sub=items+(parseFloat(q.laborCost)||0)+(parseFloat(q.materialCost)||0)-(parseFloat(q.discount)||0);
+      const taxAmt=sub*(parseFloat(q.tax)||0)/100;
+      return (
+        <div style={S.screen}>
+          <NavBarForm title="Cotización" onCancel={onBack} cancelLabel="‹ Atrás" onSave={onEdit} saveLabel="Editar"/>
+          <div style={S.formScroll}>
+            <div style={{...S.detailHero,background:"linear-gradient(135deg,#ff9500,#ff6b00)"}}>
+              <div style={S.detailId}>{q.id}</div>
+              <div style={S.detailClient}>{q.client||"Sin cliente"}</div>
+              <div style={S.detailAddr}>📍 {q.address||"—"}</div>
+              <div style={S.detailDate}>📅 {fmtDate(q.date)} · Válida {q.validDays} días</div>
+              <div style={{marginTop:10,display:"flex",gap:8,alignItems:"center"}}>
+                <span style={{background:"rgba(255,255,255,.25)",padding:"3px 12px",borderRadius:20,fontSize:13,color:"#fff",fontWeight:600}}>{statusLabel[q.status]}</span>
+                <span style={{fontSize:22,fontWeight:700,color:"#fff",marginLeft:"auto"}}>${total.toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+              </div>
+            </div>
+            {q.clientPhone&&<><SectionHeader label="CONTACTO"/><div style={S.card}><DetailRow icon="📞" label="Teléfono" value={q.clientPhone}/>{q.clientEmail&&<><Divider/><DetailRow icon="✉️" label="Correo" value={q.clientEmail}/></>}</div></>}
+            <SectionHeader label="CONCEPTOS"/>
+            <div style={S.card}>
+              {q.items.map((item,i)=>(
+                <div key={item.uid}>
+                  {i>0&&<Divider/>}
+                  <div style={{padding:"12px 16px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:15,fontWeight:600,color:"#000",flex:1}}>{item.description||"—"}</span>
+                      <span style={{fontSize:15,fontWeight:700,color:"#ff9500"}}>${((parseFloat(item.price)||0)*(parseFloat(item.area)||1)).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+                    </div>
+                    <span style={{fontSize:13,color:"#8e8e93"}}>{item.area||0} {item.unit} × ${parseFloat(item.price||0).toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <SectionHeader label="RESUMEN"/>
+            <div style={S.card}>
+              <TRow l="Conceptos" v={items}/><Divider/><TRow l="Mano de obra" v={parseFloat(q.laborCost)||0}/><Divider/><TRow l="Material" v={parseFloat(q.materialCost)||0}/>
+              {(parseFloat(q.discount)||0)>0&&<><Divider/><TRow l="Descuento" v={parseFloat(q.discount)||0} neg/></>}
+              <Divider/><TRow l={`IVA (${q.tax}%)`} v={taxAmt}/>
+              <div style={{height:1,background:"#ff9500",margin:"0 16px"}}/>
+              <div style={{display:"flex",justifyContent:"space-between",padding:"14px 16px",background:"#fff8f0",borderRadius:"0 0 12px 12px"}}>
+                <span style={{fontSize:17,fontWeight:700,color:"#ff9500"}}>TOTAL</span>
+                <span style={{fontSize:20,fontWeight:700,color:"#ff9500"}}>${total.toLocaleString("es-MX",{minimumFractionDigits:2})}</span>
+              </div>
+            </div>
+            {q.notes&&<><SectionHeader label="NOTAS"/><div style={S.card}><div style={{padding:"12px 16px",fontSize:15,color:"#000",lineHeight:1.5}}>{q.notes}</div></div></>}
+            <div style={{padding:"16px 16px 0"}}>
+              <button style={S.shareBtn} onClick={handleShare}>📤 Enviar cotización al cliente</button>
+            </div>
+            <div style={{padding:"8px 16px",marginTop:8}}>
+              {!del ? <button style={S.deleteBtn} onClick={()=>setDel(true)}>Eliminar cotización</button>
+                    : <div style={S.confirmBox}>
+                        <div style={{fontSize:15}}>¿Eliminar esta cotización?</div>
+                        <div style={{display:"flex",gap:10,marginTop:12}}>
+                          <button style={S.btnCancel} onClick={()=>setDel(false)}>Cancelar</button>
+                          <button style={S.btnConfirmDel} onClick={onDelete}>Eliminar</button>
+                        </div>
+                      </div>
+              }
+            </div>
+            <div style={{height:40}}/>
+          </div>
+        </div>
+      );
+    }
+
+    function buildQuoteText(q, total) {
+      const items=(q.items||[]).reduce((s,i)=>s+(parseFloat(i.price)||0)*(parseFloat(i.area)||1),0);
+      return [
+        `🎨 PAINTFORLIFE`,`━━━━━━━━━━━━━━━━━━━━`,`COTIZACIÓN ${q.id}`,``,
+        `Cliente: ${q.client||"—"}`,`Dirección: ${q.address||"—"}`,`Fecha: ${fmtDate(q.date)}`,`Válida: ${q.validDays} días`,``,
+        `📋 CONCEPTOS:`,
+        ...(q.items||[]).map(i=>`• ${i.description||"—"}: ${i.area||0} ${i.unit} × $${parseFloat(i.price||0).toFixed(2)} = $${((parseFloat(i.price)||0)*(parseFloat(i.area)||1)).toFixed(2)}`),``,
+        `💰 RESUMEN:`,
+        `Mano de obra: $${parseFloat(q.laborCost||0).toFixed(2)}`,
+        `Material: $${parseFloat(q.materialCost||0).toFixed(2)}`,
+        (parseFloat(q.discount)||0)>0?`Descuento: -$${parseFloat(q.discount).toFixed(2)}`:"",
+        `IVA (${q.tax}%): incluido`,``,
+        `✅ TOTAL: $${total.toLocaleString("es-MX",{minimumFractionDigits:2})}`,``,
+        q.notes?`📝 NOTAS:\n${q.notes}`:"",
+        `━━━━━━━━━━━━━━━━━━━━`,`Paintforlife · Gestión profesional de pintura`,
+      ].filter(Boolean).join("\n");
+    }
+
+    // ─── Shared UI ────────────────────────────────────────────────────────────
+    function NavBar({ title, onBack }) {
+      return <div style={S.navBarForm}><button style={S.navBtn} onClick={onBack}>‹ Inicio</button><div style={S.navTitleSm}>{title}</div><div style={{width:60}}/></div>;
+    }
+    function NavBarForm({ title, onCancel, onSave, cancelLabel="Cancelar", saveLabel="Guardar" }) {
+      return <div style={S.navBarForm}><button style={S.navBtn} onClick={onCancel}>{cancelLabel}</button><div style={S.navTitleSm}>{title}</div><button style={S.navBtnBlue} onClick={onSave}>{saveLabel}</button></div>;
+    }
+    function SectionHeader({ label }) { return <div style={S.sectionHeader}>{label}</div>; }
+    function Divider() { return <div style={S.divider}/>; }
+    function FormRow({ label, children, error, align="center" }) {
+      return <div style={{...S.formRow,alignItems:align==="top"?"flex-start":"center",borderLeft:error?"3px solid #ff3b30":"none",paddingLeft:error?13:16}}><span style={{...S.formLabel,color:error?"#ff3b30":"#000"}}>{label}</span><div style={{flex:1}}>{children}</div></div>;
+    }
+    function DetailRow({ icon, label, value, align="center" }) {
+      if(!value) return null;
+      return <div style={{...S.detailRow,alignItems:align==="top"?"flex-start":"center"}}><span style={S.detailRowIcon}>{icon}</span><span style={S.detailRowLabel}>{label}</span><span style={S.detailRowVal}>{value}</span></div>;
+    }
+    function EmptyState({ icon, msg, sub }) {
+      return <div style={S.empty}><div style={{fontSize:48,marginBottom:10}}>{icon}</div><div style={S.emptyTitle}>{msg}</div>{sub&&<div style={S.emptySub}>{sub}</div>}</div>;
+    }
+
+    // ─── Styles ───────────────────────────────────────────────────────────────
+    const S = {
+      root:{ background:"#f2f2f7", minHeight:"100vh", fontFamily:"-apple-system,'SF Pro Display','Helvetica Neue',sans-serif", maxWidth:430, margin:"0 auto" },
+      screen:{ minHeight:"100vh", background:"#f2f2f7", paddingBottom:80 },
+      heroHeader:{ padding:"56px 24px 20px", background:"#fff" },
+      heroLogo:{ fontSize:42, marginBottom:8 },
+      heroTitle:{ fontSize:34, fontWeight:800, color:"#000", letterSpacing:"-0.5px" },
+      heroSub:{ fontSize:14, color:"#8e8e93", marginTop:2 },
+      homeCards:{ padding:"16px 16px 0" },
+      homeCard:{ background:"#fff", borderRadius:14, padding:"16px", marginBottom:12, display:"flex", alignItems:"center", justifyContent:"space-between", cursor:"pointer", boxShadow:"0 1px 4px rgba(0,0,0,.07)" },
+      homeCardLeft:{ display:"flex", alignItems:"center", gap:14, flex:1 },
+      homeCardIcon:{ width:46, height:46, borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", fontSize:22 },
+      homeCardText:{ flex:1 },
+      homeCardTitle:{ fontSize:17, fontWeight:700, color:"#000" },
+      homeCardDesc:{ fontSize:13, color:"#8e8e93", marginTop:2 },
+      homeCardRight:{ display:"flex", alignItems:"center", gap:8 },
+      homeBadge:{ color:"#fff", fontSize:12, fontWeight:700, padding:"2px 8px", borderRadius:20, minWidth:24, textAlign:"center" },
+      homeFooter:{ textAlign:"center", fontSize:12, color:"#c7c7cc", padding:"20px 16px" },
+      navBarForm:{ background:"rgba(242,242,247,0.95)", backdropFilter:"blur(20px)", WebkitBackdropFilter:"blur(20px)", padding:"52px 16px 12px", display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:50, borderBottom:"0.5px solid rgba(0,0,0,0.12)" },
+      navTitleSm:{ fontSize:17, fontWeight:600, color:"#000" },
+      navBtn:{ background:"none", border:"none", fontSize:17, color:"#007aff", cursor:"pointer", padding:"4px 0", fontFamily:"inherit" },
+      navBtnBlue:{ background:"none", border:"none", fontSize:17, color:"#007aff", fontWeight:600, cursor:"pointer", padding:"4px 0", fontFamily:"inherit" },
+      dashGrid:{ display:"flex", gap:10, padding:"16px 16px 4px" },
+      dashCard:{ flex:1, borderRadius:14, padding:"14px 10px", textAlign:"center", cursor:"pointer", boxShadow:"0 1px 4px rgba(0,0,0,.07)" },
+      dashPanelTitle:{ fontSize:13, fontWeight:700, color:"#8e8e93", letterSpacing:0.5, padding:"12px 0 8px", textTransform:"uppercase" },
+      searchWrap:{ margin:"12px 16px 8px", background:"rgba(118,118,128,0.12)", borderRadius:10, display:"flex", alignItems:"center", padding:"0 10px" },
+      searchIcon:{ fontSize:14, color:"#8e8e93", marginRight:6 },
+      searchInput:{ flex:1, border:"none", background:"transparent", fontSize:16, padding:"10px 0", outline:"none", fontFamily:"inherit", color:"#000" },
+      searchClear:{ background:"none", border:"none", color:"#8e8e93", fontSize:15, cursor:"pointer" },
+      jobRow:{ display:"flex", alignItems:"center", padding:"12px 16px", cursor:"pointer", gap:12 },
+      jobRowLeft:{ flex:1, minWidth:0 },
+      jobRowClient:{ fontSize:17, fontWeight:600, color:"#000", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
+      jobRowAddr:{ fontSize:13, color:"#8e8e93", marginTop:2, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" },
+      jobRowTags:{ display:"flex", gap:6, marginTop:6, flexWrap:"wrap" },
+      tag:{ background:"#e5f0ff", color:"#007aff", fontSize:11, padding:"2px 8px", borderRadius:10, fontWeight:500 },
+      tagMore:{ background:"#f2f2f7", color:"#8e8e93", fontSize:11, padding:"2px 8px", borderRadius:10 },
+      jobRowRight:{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 },
+      jobRowDate:{ fontSize:12, color:"#8e8e93" },
+      chevron:{ fontSize:20, color:"#c7c7cc" },
+      empty:{ padding:"60px 20px", textAlign:"center", background:"#fff", borderRadius:14, boxShadow:"0 1px 4px rgba(0,0,0,.06)" },
+      emptyTitle:{ fontSize:20, fontWeight:600, color:"#000", marginBottom:6 },
+      emptySub:{ fontSize:15, color:"#8e8e93" },
+      fab:{ position:"fixed", bottom:28, right:20, width:56, height:56, borderRadius:28, background:"#007aff", color:"#fff", border:"none", fontSize:28, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 4px 20px rgba(0,122,255,.4)", zIndex:100 },
+      formScroll:{ overflowY:"auto", paddingBottom:20 },
+      sectionHeader:{ fontSize:12, fontWeight:600, color:"#6d6d72", letterSpacing:0.4, padding:"16px 16px 6px", textTransform:"uppercase" },
+      card:{ margin:"0 16px", background:"#fff", borderRadius:12, overflow:"hidden", boxShadow:"0 1px 3px rgba(0,0,0,.06)" },
+      formRow:{ display:"flex", padding:"12px 16px", gap:12, minHeight:44 },
+      formLabel:{ fontSize:16, color:"#000", width:110, flexShrink:0, paddingTop:1 },
+      textInput:{ border:"none", background:"transparent", fontSize:16, color:"#000", outline:"none", fontFamily:"inherit", width:"100%", textAlign:"right", padding:0 },
+      selectInput:{ border:"none", background:"transparent", fontSize:16, color:"#007aff", outline:"none", fontFamily:"inherit", width:"100%", textAlign:"right", cursor:"pointer", appearance:"none", WebkitAppearance:"none" },
+      textArea:{ border:"none", background:"transparent", fontSize:15, color:"#000", outline:"none", fontFamily:"inherit", width:"100%", resize:"vertical", padding:0, lineHeight:1.5 },
+      divider:{ height:"0.5px", background:"rgba(0,0,0,0.1)", margin:"0 16px" },
+      segmentRow:{ display:"flex", background:"rgba(118,118,128,0.12)", borderRadius:8, padding:2, gap:2 },
+      segment:{ flex:1, border:"none", background:"transparent", fontSize:12, fontWeight:500, color:"#8e8e93", padding:"5px 4px", borderRadius:6, cursor:"pointer", fontFamily:"inherit" },
+      segmentActive:{ background:"#fff", color:"#000", boxShadow:"0 1px 4px rgba(0,0,0,.12)" },
+      taskHeader:{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"16px 16px 6px" },
+      taskLabel:{ fontSize:12, fontWeight:600, color:"#6d6d72", letterSpacing:0.4, textTransform:"uppercase" },
+      taskRemove:{ background:"none", border:"none", color:"#ff3b30", fontSize:14, cursor:"pointer", fontFamily:"inherit" },
+      addTaskBtn:{ display:"flex", alignItems:"center", justifyContent:"center", margin:"12px 16px 0", background:"#fff", border:"1.5px dashed #007aff", borderRadius:12, padding:"14px 16px", color:"#007aff", fontSize:16, fontWeight:500, cursor:"pointer", fontFamily:"inherit", width:"calc(100% - 32px)", boxSizing:"border-box" },
+      detailHero:{ margin:"16px 16px 0", borderRadius:18, padding:"24px 20px", color:"#fff" },
+      detailId:{ fontSize:11, opacity:0.7, fontFamily:"monospace", marginBottom:6, letterSpacing:1 },
+      detailClient:{ fontSize:26, fontWeight:700, marginBottom:6 },
+      detailAddr:{ fontSize:14, opacity:0.85, marginBottom:4 },
+      detailDate:{ fontSize:14, opacity:0.85 },
+      detailRow:{ display:"flex", padding:"12px 16px", gap:10 },
+      detailRowIcon:{ fontSize:16, width:20, textAlign:"center", flexShrink:0 },
+      detailRowLabel:{ fontSize:16, color:"#8e8e93", width:80, flexShrink:0 },
+      detailRowVal:{ fontSize:16, color:"#000", flex:1 },
+      codeVal:{ background:"#f2f2f7", padding:"2px 10px", borderRadius:6, fontFamily:"monospace", fontSize:14, color:"#007aff", fontWeight:600 },
+      shareBtn:{ width:"100%", padding:"14px", background:"#ff9500", border:"none", borderRadius:12, color:"#fff", fontSize:17, fontWeight:600, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 2px 10px rgba(255,149,0,.35)" },
+      deleteBtn:{ width:"100%", padding:"14px", background:"#fff", border:"none", borderRadius:12, color:"#ff3b30", fontSize:17, fontWeight:500, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 1px 3px rgba(0,0,0,.08)" },
+      confirmBox:{ background:"#fff", borderRadius:12, padding:"16px", boxShadow:"0 1px 3px rgba(0,0,0,.08)" },
+      btnCancel:{ flex:1, padding:"10px", background:"#f2f2f7", border:"none", borderRadius:8, fontSize:15, cursor:"pointer", fontFamily:"inherit" },
+      btnConfirmDel:{ flex:1, padding:"10px", background:"#ff3b30", border:"none", borderRadius:8, color:"#fff", fontSize:15, fontWeight:600, cursor:"pointer", fontFamily:"inherit" },
+    };
+
+    const CSS=`
+      *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+      body{margin:0;background:#f2f2f7;}
+      .hcard:active{opacity:.85;}
+      .cell:active{background:rgba(0,0,0,.04)!important;}
+      .fab:active{transform:scale(.93);}
+      .addtask:active{opacity:.7;}
+      input[type=date]::-webkit-calendar-picker-indicator{opacity:.5;}
+      textarea{-webkit-appearance:none;}
+      select option{color:#000;}
+      .toast{position:fixed;bottom:90px;left:50%;transform:translateX(-50%);padding:10px 22px;border-radius:30px;font-size:15px;font-weight:600;color:#fff;z-index:9999;font-family:-apple-system,sans-serif;box-shadow:0 4px 20px rgba(0,0,0,.2);animation:fadeup .25s ease;white-space:nowrap;}
+      .tok{background:rgba(52,199,89,.95);}
+      .terr{background:rgba(255,59,48,.95);}
+      @keyframes fadeup{from{opacity:0;transform:translateX(-50%) translateY(10px);}to{opacity:1;transform:translateX(-50%) translateY(0);}}
+    `;
+
+    // ─── Mount ────────────────────────────────────────────────────────────────
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+
+  <!-- Service Worker Registration -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/sw.js")
+          .then(reg => console.log("SW registered:", reg.scope))
+          .catch(err => console.log("SW error:", err));
+      });
+    }
+  </script>
+</body>
+</html>
