@@ -1,12 +1,12 @@
 {
   "name": "Paintforlife",
   "short_name": "Paintforlife",
-  "description": "Gestión profesional de trabajos de pintura",
+  "description": "Gestión profesional de trabajos de pintura - Eleazar Duarte",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",
-  "background_color": "#f2f2f7",
-  "theme_color": "#007aff",
+  "background_color": "#1a1a1a",
+  "theme_color": "#1a1a1a",
   "lang": "es-MX",
   "icons": [
     {
@@ -22,6 +22,5 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "productivity"],
-  "screenshots": []
+  "categories": ["business", "productivity"]
 }
